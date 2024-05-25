@@ -1,0 +1,54 @@
+import pandas as pd
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
+
+# Load training and testing data from CSV files
+train_data = pd.read_csv('Train_data.csv')
+test_data = pd.read_csv('test_data.csv')
+
+# Handle missing values (example: fill with mean)
+train_data.fillna(train_data.mean(), inplace=True)
+test_data.fillna(test_data.mean(), inplace=True)
+
+# Feature and target separation for training data
+X_train = train_data.drop(columns=['Disease'])
+y_train = train_data['Disease']
+
+# Feature and target separation for testing data
+X_test = test_data.drop(columns=['Disease'])
+y_test = test_data['Disease']
+
+# Feature scaling
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)
+X_test = scaler.transform(X_test)
+
+# Model training
+rf = RandomForestClassifier(random_state=42)
+param_grid = {
+    'n_estimators': [100, 200, 300],
+    'max_depth': [None, 10, 20, 30]
+}
+grid_search = GridSearchCV(rf, param_grid, cv=5, scoring='f1')
+grid_search.fit(X_train, y_train)
+
+# Best model
+best_model = grid_search.best_estimator_
+
+# Predictions
+y_pred = best_model.predict(X_test)
+
+# Evaluation
+accuracy = accuracy_score(y_test, y_pred)
+precision = precision_score(y_test, y_pred)
+recall = recall_score(y_test, y_pred)
+f1 = f1_score(y_test, y_pred)
+roc_auc = roc_auc_score(y_test, y_pred)
+
+print(f'Accuracy: {accuracy}')
+print(f'Precision: {precision}')
+print(f'Recall: {recall}')
+print(f'F1 Score: {f1}')
+print(f'ROC AUC Score: {roc_auc}')
