@@ -1,0 +1,98 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+from statsmodels.tsa.seasonal import seasonal_decompose
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+from prophet import Prophet
+
+# Load the dataset
+data = pd.read_csv('market_data.csv')
+
+# Data Preprocessing
+data['date'] = pd.to_datetime(data['date'])
+data['month'] = data['date'].dt.month
+data['year'] = data['date'].dt.year
+
+# Handle missing values
+data.fillna(method='ffill', inplace=True)
+
+# Encode categorical variables
+encoder = OneHotEncoder()
+encoded_categories = encoder.fit_transform(data[['market', 'state', 'city']]).toarray()
+encoded_df = pd.DataFrame(encoded_categories, columns=encoder.get_feature_names_out())
+data = pd.concat([data, encoded_df], axis=1)
+
+# Drop original categorical columns
+data.drop(columns=['market', 'state', 'city'], inplace=True)
+
+# Exploratory Data Analysis (EDA)
+plt.figure(figsize=(14, 7))
+plt.plot(data['date'], data['quantity'])
+plt.title('Quantity over Time')
+plt.xlabel('Date')
+plt.ylabel('Quantity')
+plt.show()
+
+# Decompose the time series
+decompose_result = seasonal_decompose(data.set_index('date')['quantity'], model='multiplicative')
+decompose_result.plot()
+plt.show()
+
+# Feature Engineering
+data['lag_1'] = data['quantity'].shift(1)
+data['rolling_mean_3'] = data['quantity'].rolling(window=3).mean()
+data['rolling_std_3'] = data['quantity'].rolling(window=3).std()
+
+# Drop NA values from lag and rolling calculations
+data.dropna(inplace=True)
+
+# Model Selection and Training
+# Prepare the dataset for modeling
+X = data.drop(columns=['quantity', 'date'])
+y = data['quantity']
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+
+# Scale the features
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+# Define and train SARIMA model
+sarima_model = SARIMAX(y_train, order=(1, 1, 1), seasonal_order=(1, 1, 1, 12))
+sarima_result = sarima_model.fit(disp=False)
+
+# Forecasting with SARIMA
+sarima_forecast = sarima_result.predict(start=len(y_train), end=len(y_train) + len(y_test) - 1, typ='levels')
+
+# Define and train Prophet model
+prophet_data = data[['date', 'quantity']].rename(columns={'date': 'ds', 'quantity': 'y'})
+prophet_model = Prophet()
+prophet_model.fit(prophet_data)
+
+future = prophet_model.make_future_dataframe(periods=len(X_test))
+prophet_forecast = prophet_model.predict(future)
+
+# Model Evaluation
+sarima_mae = mean_absolute_error(y_test, sarima_forecast)
+sarima_mse = mean_squared_error(y_test, sarima_forecast)
+sarima_rmse = np.sqrt(sarima_mse)
+
+prophet_mae = mean_absolute_error(y_test, prophet_forecast['yhat'][-len(y_test):])
+prophet_mse = mean_squared_error(y_test, prophet_forecast['yhat'][-len(y_test):])
+prophet_rmse = np.sqrt(prophet_mse)
+
+print(f"SARIMA MAE: {sarima_mae}, MSE: {sarima_mse}, RMSE: {sarima_rmse}")
+print(f"Prophet MAE: {prophet_mae}, MSE: {prophet_mse}, RMSE: {prophet_rmse}")
+
+# Plotting the results
+plt.figure(figsize=(14, 7))
+plt.plot(data['date'], data['quantity'], label='Actual')
+plt.plot(data['date'].iloc[-len(y_test):], sarima_forecast, label='SARIMA Forecast')
+plt.plot(data['date'].iloc[-len(y_test):], prophet_forecast['yhat'][-len(y_test):], label='Prophet Forecast')
+plt.legend()
+plt.show()
